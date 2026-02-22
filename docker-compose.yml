@@ -1,0 +1,28 @@
+name: spotify-tracker
+
+services:
+    postgres:
+        image: postgres:18.2-alpine3.23
+        container_name: postgres_db
+        restart: always
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        ports:
+            - "5432:5432"
+
+    django:
+        build: .
+        container_name: django_app
+        restart: always
+        depends_on:
+            - postgres
+        volumes:
+            - ./app:/app
+        ports:
+            - "8000:8000"
+        command: >
+            sh -c "
+                python manage.py runserver 0.0.0.0:8000
+            "
