@@ -7,6 +7,7 @@ from .credentials import CLIENT_ID, CLIENT_SECRET
 
 BASE_URL = "https://api.spotify.com/v1/me/"
 
+
 def check_tokens(app_token):
     tokens = Token.objects.filter(user=app_token)
     
@@ -77,3 +78,9 @@ def refresh_token_func(app_token):
         expires_in=expires_in, 
         token_type=token_type
     )
+    
+def get_app_token(request):
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Token '):
+        return auth_header.split(' ')[1]
+    return None

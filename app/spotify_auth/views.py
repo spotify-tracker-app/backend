@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from .extras import create_or_update_tokens, is_spotify_authenticated, check_tokens
+from .extras import create_or_update_tokens, is_spotify_authenticated, check_tokens, get_app_token
 from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework import response
@@ -7,14 +7,12 @@ from requests import Request, post, get
 from django.http import HttpResponseRedirect
 from .credentials import CLIENT_ID, CLIENT_SECRET, CLIENT_URI
 
-def get_app_token(request):
-    auth_header = request.headers.get('Authorization')
-    if auth_header and auth_header.startswith('Token '):
-        return auth_header.split(' ')[1]
-    return None
+
 class AuthenticationURL(APIView):
     def get(self, request, format=None):
-        scopes = "user-read-currently-playing user-read-playback-state"
+        scopes = "user-read-currently-playing user-read-playback-state user-read-recently-played user-top-read user-read-private user-read-email"
+        
+        
         url = Request("GET", "https://accounts.spotify.com/authorize", params={
             "scope": scopes,
             "response_type": "code",
@@ -85,3 +83,17 @@ class CurrentSpotifyUser(APIView):
             return response.Response({"Error": "Failed to fetch user data from Spotify"}, status=status.HTTP_400_BAD_REQUEST)
         
         return response.Response(spotify_response.json(), status=status.HTTP_200_OK)
+    
+class LogoutSpotifyUser(APIView):
+    def post(self, request, format=None):
+        app_token = get_app_token(request)
+        if not app_token:
+            return response.Response({"Error": "Authentication token not provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        tokens = Token.objects.filter(user=app_token)
+        if tokens:
+            tokens.delete()
+            return response.Response({"Success": "User logged out successfully"}, status=status.HTTP_200_OK)
+        
+        return response.Response({"Error": "User not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
+    
