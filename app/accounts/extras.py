@@ -7,34 +7,34 @@ from .credentials import CLIENT_ID, CLIENT_SECRET
 
 BASE_URL = "https://api.spotify.com/v1/me/"
 
-def check_tokens(session_id):
-    tokens = Token.objects.filter(user=session_id)
+def check_tokens(app_token):
+    tokens = Token.objects.filter(user=app_token)
     
     if not tokens:
         return None
     
     
     if tokens[0].expires_in <= timezone.now():
-        refresh_token_func(session_id)
-        return Token.objects.filter(user=session_id)[0]
+        refresh_token_func(app_token)
+        return Token.objects.filter(user=app_token)[0]
     
     return tokens[0]
         
     
-def create_or_update_tokens(session_id, access_token, refresh_token, expires_in, token_type):
-    tokens = check_tokens(session_id)
+def create_or_update_tokens(app_token, access_token, refresh_token, expires_in, token_type):
+    token_obj = check_tokens(app_token)
     expires_in = timezone.now() + timedelta(seconds=expires_in)
 
-    if tokens:
-        tokens.access_token = access_token
+    if token_obj:
+        token_obj.access_token = access_token
         if refresh_token:
-            tokens.refresh_token = refresh_token
-        tokens.expires_in = expires_in
-        tokens.token_type = token_type
-        tokens.save(update_fields=['access_token', 'refresh_token', 'expires_in', 'token_type'])
+            token_obj.refresh_token = refresh_token
+        token_obj.expires_in = expires_in
+        token_obj.token_type = token_type
+        token_obj.save(update_fields=['access_token', 'refresh_token', 'expires_in', 'token_type'])
     else:
         Token.objects.create(
-            user=session_id, 
+            user=app_token, 
             access_token=access_token, 
             refresh_token=refresh_token, 
             expires_in=expires_in, 
@@ -42,22 +42,24 @@ def create_or_update_tokens(session_id, access_token, refresh_token, expires_in,
         )
        
         
-def is_spotify_authenticated(session_id):
-    tokens = check_tokens(session_id)
+def is_spotify_authenticated(app_token):
+    token_obj = check_tokens(app_token)
     
-    if tokens:
-        if tokens.expires_in <= timezone.now():
-            refresh_token_func(session_id)
+    if token_obj:
+        if token_obj.expires_in <= timezone.now():
+            refresh_token_func(app_token)
         return True
     return False
 
 
-def refresh_token_func(session_id):
-    refresh_token = check_tokens(session_id).refresh_token
+def refresh_token_func(app_token):
+    token_obj = check_tokens(app_token)
+    if not token_obj or not token_obj.refresh_token:
+        return
     
     response = post("https://accounts.spotify.com/api/token", data={
         "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
+        "refresh_token": token_obj.refresh_token,
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET
     }).json()
@@ -66,10 +68,12 @@ def refresh_token_func(session_id):
     expires_in = response.get("expires_in")
     token_type = response.get("token_type")
     
+    new_refresh_token = response.get("refresh_token", token_obj.refresh_token)
+    
     create_or_update_tokens(
-        session_id=session_id, 
+        app_token=app_token, 
         access_token=access_token, 
-        refresh_token=refresh_token, 
+        refresh_token=new_refresh_token, 
         expires_in=expires_in, 
         token_type=token_type
     )

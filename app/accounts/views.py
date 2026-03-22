@@ -7,6 +7,11 @@ from requests import Request, post, get
 from django.http import HttpResponseRedirect
 from .credentials import CLIENT_ID, CLIENT_SECRET, CLIENT_URI
 
+def get_app_token(request):
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Token '):
+        return auth_header.split(' ')[1]
+    return None
 class AuthenticationURL(APIView):
     def get(self, request, format=None):
         scopes = "user-read-currently-playing user-read-playback-state"
@@ -18,58 +23,54 @@ class AuthenticationURL(APIView):
         }).prepare().url
         return response.Response({"url": url}, status=status.HTTP_200_OK)
 
-def spotify_redirect(request, format=None):
-    code = request.GET.get("code")
-    error = request.GET.get("error")
-    if error:
-        return response.Response({"Error": "Authorization failed"}, status=status.HTTP_400_BAD_REQUEST)
-
-    api_response = post('https://accounts.spotify.com/api/token', data={
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": CLIENT_URI,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET
-    }).json()
-    
-    access_token = api_response.get("access_token")
-    refresh_token = api_response.get("refresh_token")
-    expires_in = api_response.get("expires_in")
-    token_type = api_response.get("token_type")
-    
-    authKey = request.session.session_key
-    if not request.session.exists(authKey):
-        request.session.create()
-        authKey = request.session.session_key
+class SpotifyCallback(APIView):
+    def post(self, request, format=None):
+        code = request.data.get("code")
+        app_token = get_app_token(request)
         
-    create_or_update_tokens(
-        session_id=authKey, 
-        access_token=access_token, 
-        refresh_token=refresh_token, 
-        expires_in=expires_in, 
-        token_type=token_type
-    )
-    
-    redirect_url = "http://127.0.0.1:8000/auth/me/"
-    return HttpResponseRedirect(redirect_url)
+        if not app_token:
+            return response.Response({"Error": "Authentication token not provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not code:
+            return response.Response({"Error": "Authorization code not provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        api_response = post('https://accounts.spotify.com/api/token', data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": CLIENT_URI,
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET
+        }).json()
+        
+        if "error" in api_response:
+            return response.Response({"Error": "Failed to retrieve access token"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        create_or_update_tokens(
+            app_token=app_token, 
+            access_token=api_response.get("access_token"), 
+            refresh_token=api_response.get("refresh_token"), 
+            expires_in=api_response.get("expires_in"), 
+            token_type=api_response.get("token_type")
+        )
+        
+        return response.Response({"Success": "Tokens stored successfully"}, status=status.HTTP_200_OK)
 
 class CheckAuthentication(APIView):
     def get(self, request, format=None):
-        key = self.request.session.session_key
-        if not self.request.session.exists(key):
-            self.request.session.create()
-            key = self.request.session.session_key
+        app_token = get_app_token(request)
+        if not app_token:
+            return response.Response({"Error": "Authentication token not provided"}, status=status.HTTP_400_BAD_REQUEST)
         
-        auth_status = is_spotify_authenticated(key)
-        
-        return response.Response({'status': auth_status}, status=status.HTTP_200_OK)
+        auth_status = is_spotify_authenticated(app_token)
+        return response.Response({"status": auth_status}, status=status.HTTP_200_OK)
     
 class CurrentSpotifyUser(APIView):
     def get(self, request, format=None):
-        if not request.session.exists(request.session.session_key):
-            request.session.create()
-        session_id = request.session.session_key
-        token_obj = check_tokens(session_id)
+        app_token = get_app_token(request)
+        if not app_token:
+            return response.Response({"Error": "Authentication token not provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        token_obj = check_tokens(app_token)
         if not token_obj:
             return response.Response({"Error": "User not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
         
@@ -81,6 +82,6 @@ class CurrentSpotifyUser(APIView):
         spotify_response = get("https://api.spotify.com/v1/me", headers=headers)
         
         if spotify_response.status_code != 200:
-            return response.Response({"Error": "Failed to fetch user data"}, status=spotify_response.status_code)
+            return response.Response({"Error": "Failed to fetch user data from Spotify"}, status=status.HTTP_400_BAD_REQUEST)
         
         return response.Response(spotify_response.json(), status=status.HTTP_200_OK)
