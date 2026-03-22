@@ -1,17 +1,15 @@
-from django.shortcuts import render
-from .extras import create_or_update_tokens, is_spotify_authenticated, check_tokens, get_app_token
 from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework import response
 from requests import Request, post, get
 from django.http import HttpResponseRedirect
+from .extras import create_or_update_tokens, is_spotify_authenticated, check_tokens, get_app_token
 from .credentials import CLIENT_ID, CLIENT_SECRET, CLIENT_URI
 
 
 class AuthenticationURL(APIView):
     def get(self, request, format=None):
         scopes = "user-read-currently-playing user-read-playback-state user-read-recently-played user-top-read user-read-private user-read-email"
-        
         
         url = Request("GET", "https://accounts.spotify.com/authorize", params={
             "scope": scopes,
@@ -22,6 +20,7 @@ class AuthenticationURL(APIView):
         return response.Response({"url": url}, status=status.HTTP_200_OK)
 
 class SpotifyCallback(APIView):
+    
     def post(self, request, format=None):
         code = request.data.get("code")
         app_token = get_app_token(request)
