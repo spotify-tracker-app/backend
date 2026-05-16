@@ -1,4 +1,4 @@
-# 🎵 Spotify Stats API
+# Backend API
 
 A Django REST API that integrates with the Spotify Web API to provide user listening statistics and account information. Built with token-based authentication to securely link app users with their Spotify accounts.
 
